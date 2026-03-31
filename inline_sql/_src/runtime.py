@@ -1,36 +1,79 @@
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import duckdb
 import pandas as pd
 import sqlparse
 
 
-def prepare_query(query: str) -> Tuple[str, List[str]]:
-    """Prepare a query, replacing all placeholders with numbered parameters."""
+def prepare_query(query: str) -> tuple[str, list[str], str, set[str]]:
+    """Prepare a query and its table-discovery fallback."""
     statements = sqlparse.parse(query)
     if len(statements) != 1:
         raise ValueError("Only one SQL statement is allowed.")
     statement: sqlparse.sql.Statement = statements[0]
     if statement.get_type() != "SELECT":
         raise ValueError("Only SELECT statements are supported.")
-    new_tokens: List[str] = []
-    params_map: Dict[str, int] = {}
+    new_tokens: list[str] = []
+    discovery_tokens: list[str] = []
+    params_map: dict[str, int] = {}
+    identifiers: set[str] = set()
     for token in statement.flatten():
         if token.ttype in sqlparse.tokens.Name.Placeholder:
             index = params_map.setdefault(token.value, len(params_map))
             new_tokens.append("?" + str(index + 1))
-        else:
-            new_tokens.append(str(token))
+            discovery_tokens.append("NULL")
+            continue
+
+        token_value = str(token)
+        new_tokens.append(token_value)
+        discovery_tokens.append(token_value)
+        if (
+            token.ttype in sqlparse.tokens.Name
+            or token.ttype in sqlparse.tokens.Keyword
+        ):
+            identifiers.add(token_value)
+        elif token.ttype in sqlparse.tokens.Literal.String.Symbol:
+            identifier = token_value[1:-1].replace('""', '"')
+            identifiers.add(identifier)
+
     params_list = [k[1:] for _, k in sorted((v, k) for k, v in params_map.items())]
-    return "".join(new_tokens), params_list
+    return "".join(new_tokens), params_list, "".join(discovery_tokens), identifiers
 
 
-def run_query(query: str, context: Dict[str, Any]) -> pd.DataFrame:
+def run_query(query: str, context: dict[str, Any]) -> pd.DataFrame:
     """Run a SQL query against an in-memory DuckDB database."""
-    new_query, params_list = prepare_query(query)
+    new_query, params_list, discovery_query, identifiers = prepare_query(query)
     for name in params_list:
         if name not in context:
             raise NameError(f"name {name!r} is not defined")
     con = duckdb.connect()
+    dataframes = {
+        name: value
+        for name, value in context.items()
+        if isinstance(value, pd.DataFrame)
+    }
+    table_names: set[str] = set()
+    if dataframes:
+        try:
+            table_names = con.get_table_names(discovery_query)
+        except duckdb.Error:
+            table_names = identifiers
+
+    registered_names: set[str] = set()
+    for identifier in table_names:
+        if identifier in dataframes:
+            con.register(identifier, dataframes[identifier])
+            registered_names.add(identifier)
+            continue
+
+        matches = [
+            name
+            for name in dataframes
+            if name not in registered_names and name.casefold() == identifier.casefold()
+        ]
+        if len(matches) == 1:
+            name = matches[0]
+            con.register(name, dataframes[name])
+            registered_names.add(name)
     con.execute(new_query, parameters=[context[k] for k in params_list])
     return con.fetchdf()

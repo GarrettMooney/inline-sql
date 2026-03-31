@@ -55,6 +55,8 @@ def test_inline_df():
     df = pd.DataFrame({"x": [1, 2, 3], "y": [4, 2, 2]})
     assert len(sql^ "SELECT * FROM df") == 3  # fmt: skip
     assert len(sql^ "SELECT * FROM df a, df b WHERE a.x = b.y") == 2  # fmt: skip
+    limit = 2
+    assert sql_val^ "SELECT COUNT() FROM df WHERE x <= $limit" == 2  # fmt: skip
     assert sql_val^ """
         SELECT COUNT() FROM (
             SELECT * FROM df a
@@ -62,3 +64,60 @@ def test_inline_df():
             LEFT JOIN df c ON b.x = c.y
         )
     """ == 5  # fmt: skip
+
+
+def test_inline_df_with_string_dtype():
+    df = pd.DataFrame({"label": pd.Series(["alpha", "beta"], dtype="string")})
+    assert sql_val^ "SELECT COUNT() FROM df WHERE label = 'alpha'" == 1  # fmt: skip
+
+
+def test_unreferenced_dataframe_is_not_registered():
+    unused = pd.DataFrame({"value": [1 + 2j]})
+    assert sql_val^ "SELECT 1" == 1  # fmt: skip
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "SELECT COUNT() FROM df",
+        "SELECT COUNT() FROM DF",
+        'SELECT COUNT() FROM "df"',
+    ],
+)
+def test_inline_df_name_matching(query):
+    df = pd.DataFrame({"x": [1, 2, 3]})
+    assert sql_val^ query == 3  # fmt: skip
+
+
+def test_registers_each_joined_dataframe():
+    left_df = pd.DataFrame({"x": [1, 2]})
+    right_df = pd.DataFrame({"x": [2, 3]})
+    assert sql_val^ """
+        SELECT COUNT()
+        FROM left_df
+        JOIN right_df USING (x)
+    """ == 1  # fmt: skip
+
+
+def test_dataframe_name_matching_prefers_exact_case():
+    df = pd.DataFrame({"x": [1]})
+    DF = pd.DataFrame({"x": [1, 2]})
+    assert sql_val^ "SELECT COUNT() FROM df" == 1  # fmt: skip
+    assert sql_val^ "SELECT COUNT() FROM DF" == 2  # fmt: skip
+
+
+def test_column_name_does_not_register_dataframe():
+    price = pd.DataFrame({"unsupported": [1 + 2j]})
+    purchases = pd.DataFrame({"price": [10, 20]})
+    assert sql_val^ "SELECT SUM(price) FROM purchases" == 30  # fmt: skip
+
+
+def test_cte_name_does_not_register_dataframe():
+    df = pd.DataFrame({"unsupported": [1 + 2j]})
+    assert sql_val^ "WITH df AS (SELECT 1 AS x) SELECT x FROM df" == 1  # fmt: skip
+
+
+def test_registration_fallback_for_parameterized_table_function():
+    df = pd.DataFrame({"x": [1]})
+    path = "tests/data/weather.csv"
+    assert sql_val^ "SELECT COUNT() FROM df, read_csv_auto($path)" == 1461  # fmt: skip

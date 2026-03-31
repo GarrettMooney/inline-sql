@@ -3,23 +3,32 @@ name: CI
 on: [push, pull_request]
 
 jobs:
-  lint_test:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: astral-sh/setup-uv@v10
+        with:
+          python-version: "3.14"
+      - run: uv run --frozen ruff check .
+      - run: uv run --frozen ruff format --check .
+
+  test:
     name: Python ${{ matrix.python-version }} on ${{ startsWith(matrix.os, 'macos-') && 'macOS' || startsWith(matrix.os, 'windows-') && 'Windows' || 'Linux' }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
-        python-version: ["3.7", "3.8", "3.9", "3.10"]
+        python-version: ["3.10", "3.11", "3.12", "3.13", "3.14"]
 
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-python@v4
+      - uses: astral-sh/setup-uv@v10
         with:
           python-version: ${{ matrix.python-version }}
 
-      - run: pip install --upgrade hatch
+      - run: uv sync --frozen
 
-      - run: hatch run black --check .
-
-      - run: hatch run cov
+      - run: uv run --frozen pytest --cov-report=term-missing --cov-config=pyproject.toml --cov=inline_sql --cov=tests

@@ -21,7 +21,7 @@ Operations in the `inline_sql` library run directly inside your process. You can
 
 ## Installation
 
-Supports Python 3.7+, tested on all major operating systems.
+Supports Python 3.10+, tested on all major operating systems.
 
 ```console
 pip install inline-sql
