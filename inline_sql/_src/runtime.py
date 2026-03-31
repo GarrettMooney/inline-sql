@@ -32,5 +32,15 @@ def run_query(query: str, context: Dict[str, Any]) -> pd.DataFrame:
         if name not in context:
             raise NameError(f"name {name!r} is not defined")
     con = duckdb.connect()
+    for name, value in context.items():
+        if isinstance(value, pd.DataFrame):
+            # Pandas 2.x uses StringDtype ("str") by default for string columns,
+            # which older duckdb versions don't recognize. Convert to object.
+            str_cols = [c for c in value.columns if value[c].dtype == "string"
+                        or str(value[c].dtype) == "str"]
+            if str_cols:
+                value = value.copy()
+                value[str_cols] = value[str_cols].astype(object)
+            con.register(name, value)
     con.execute(new_query, parameters=[context[k] for k in params_list])
     return con.fetchdf()
