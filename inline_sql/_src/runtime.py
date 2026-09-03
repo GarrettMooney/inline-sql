@@ -11,7 +11,13 @@ def prepare_query(query: str) -> tuple[str, list[str], str, set[str]]:
     if len(statements) != 1:
         raise ValueError("Only one SQL statement is allowed.")
     statement: sqlparse.sql.Statement = statements[0]
-    if statement.get_type() != "SELECT":
+    first_token = statement.token_first(skip_ws=True, skip_cm=True)
+    is_from_first = (
+        first_token is not None
+        and first_token.ttype in sqlparse.tokens.Keyword
+        and first_token.normalized == "FROM"
+    )
+    if statement.get_type() != "SELECT" and not is_from_first:
         raise ValueError("Only SELECT statements are supported.")
     new_tokens: list[str] = []
     discovery_tokens: list[str] = []

@@ -96,6 +96,26 @@ print(sql_val^ """
 
 In general, `sql_val` is used to run scalar queries, while `sql` is used to run queries that return tables.
 
+## FROM-First Queries
+
+DuckDB's friendly SQL syntax allows the `SELECT` clause to follow the `FROM`
+clause or be omitted entirely. An omitted `SELECT` is equivalent to `SELECT *`.
+
+```python
+import pandas as pd
+
+
+df = pd.DataFrame({"x": [1, 2, 3]})
+minimum = 1
+
+sql ^ "FROM df"
+sql ^ "FROM df WHERE x > $minimum"
+sql ^ "FROM df SELECT x * 2 AS doubled"
+sql_val ^ "FROM df SELECT COUNT(*)"
+```
+
+See DuckDB's [FROM-first syntax documentation](https://duckdb.org/docs/stable/sql/query_syntax/from#from-first-syntax) for more examples.
+
 ## Acknowledgements
 
 Created by Eric Zhang ([@ekzhang1](https://twitter.com/ekzhang1)). Licensed under the [MIT license](LICENSE).

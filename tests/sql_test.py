@@ -121,3 +121,50 @@ def test_registration_fallback_for_parameterized_table_function():
     df = pd.DataFrame({"x": [1]})
     path = "tests/data/weather.csv"
     assert sql_val^ "SELECT COUNT() FROM df, read_csv_auto($path)" == 1461  # fmt: skip
+
+
+def test_implicit_select_all():
+    result = sql^ "FROM range(3)"  # fmt: skip
+    assert result["range"].tolist() == [0, 1, 2]
+
+
+def test_implicit_select_from_dataframe_with_parameter():
+    df = pd.DataFrame({"x": [1, 2, 3]})
+    minimum = 1
+    result = sql^ "FROM df WHERE x > $minimum"  # fmt: skip
+    assert result["x"].tolist() == [2, 3]
+
+
+def test_from_first_with_explicit_select():
+    df = pd.DataFrame({"x": [1, 2, 3]})
+    result = sql^ "FROM df SELECT x * 2 AS doubled"  # fmt: skip
+    assert result["doubled"].tolist() == [2, 4, 6]
+
+
+def test_from_first_scalar_query():
+    assert sql_val^ "FROM range(5) SELECT COUNT(*)" == 5  # fmt: skip
+
+
+def test_implicit_select_with_leading_comment():
+    result = sql^ """
+        -- Return every generated row.
+        FROM range(2)
+    """  # fmt: skip
+    assert result["range"].tolist() == [0, 1]
+
+
+@pytest.mark.parametrize(
+    "query",
+    [
+        "UPDATE items SET value = 1",
+        "DELETE FROM items",
+    ],
+)
+def test_implicit_select_does_not_allow_mutations(query):
+    with pytest.raises(ValueError, match="Only SELECT statements are supported"):
+        sql^ query  # fmt: skip
+
+
+def test_implicit_select_does_not_allow_multiple_statements():
+    with pytest.raises(ValueError, match="Only one SQL statement is allowed"):
+        sql^ "FROM range(1); DELETE FROM items"  # fmt: skip
